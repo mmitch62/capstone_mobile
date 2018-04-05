@@ -33,6 +33,7 @@ import com.google.android.gms.tasks.Task;
 
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.concurrent.ExecutionException;
 
 public class Map extends FragmentActivity implements OnMapReadyCallback, GoogleApiClient.OnConnectionFailedListener {
 
@@ -59,7 +60,12 @@ public class Map extends FragmentActivity implements OnMapReadyCallback, GoogleA
     CharSequence mPlaceName;
     HashMap<CharSequence, LatLng> mLocationList;
     double current_latitude, current_longitude;
+    double start_latitude, start_longitude;
     double end_latitude, end_longitude;
+
+    String directionsData;
+    HashMap<String, String> distanceList;
+    double[][] distanceMatrix;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -112,8 +118,6 @@ public class Map extends FragmentActivity implements OnMapReadyCallback, GoogleA
                 Log.i(TAG, "Place: " + place.getName());
                 mLatLngLocation = place.getLatLng();
                 mPlaceName = place.getName();
-                end_latitude = place.getLatLng().latitude;
-                end_longitude = place.getLatLng().longitude;
             }
 
             @Override
@@ -150,7 +154,8 @@ public class Map extends FragmentActivity implements OnMapReadyCallback, GoogleA
        try {
            if (mLocationPermissionGranted) {
                Task<Location> locationResult = mFusedLocationClient.getLastLocation(); //THIS ALWAYS RETURNS NULL
-               //mFusedLocationClient.requestLocationUpdates(provider etc);
+               //mFusedLocationClient.requestLocationUpdates(provider etc) MUST BE USED;
+
                locationResult.addOnCompleteListener(this, new OnCompleteListener<Location>() {
                    @Override
                    public void onComplete(@NonNull Task<Location> task) {
@@ -160,6 +165,11 @@ public class Map extends FragmentActivity implements OnMapReadyCallback, GoogleA
                           //mLastKnownLocation = new Location(task.getResult());
                           current_latitude = mLastKnownLocation.getLatitude();
                           current_longitude = mLastKnownLocation.getLongitude();
+
+                          //TEMPORARY HARD-CODED METHOD TO ADD DEVICE LOCATION TO HASHMAP
+                          LatLng deviceLocation = new LatLng(mLastKnownLocation.getLatitude(), mLastKnownLocation.getLongitude());
+                          CharSequence tempCurrent = "Current location";
+                          mLocationList.put(tempCurrent, deviceLocation);
 
                           mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(
                                   new LatLng(current_latitude, current_longitude), DEFAULT_ZOOM));
@@ -220,22 +230,19 @@ public class Map extends FragmentActivity implements OnMapReadyCallback, GoogleA
     public void onAdd(View view) {
 
         mLocationList.put(mPlaceName, mLatLngLocation);
+
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(
+                new LatLng(mLatLngLocation.latitude, mLatLngLocation.longitude), DEFAULT_ZOOM));
+        mMap.addMarker(new MarkerOptions()
+                .position(new LatLng(mLatLngLocation.latitude, mLatLngLocation.longitude))
+                .title(mPlaceName.toString()));
+
         /*
         for(LatLng value : mLocationList.values())
         {
 
         }
         */
-        Object dataTransfer[] = new Object[3];
-
-        String url = getDirectionsUrl();
-        GetDirectionsData getDirectionsData = new GetDirectionsData();
-        dataTransfer[0] = mMap;
-        dataTransfer[1] = url;
-        dataTransfer[2] = new LatLng(mLatLngLocation.latitude, mLatLngLocation.longitude);
-
-        getDirectionsData.execute(dataTransfer);
-
     }
 
     public void onRoute(View view) {
@@ -243,34 +250,95 @@ public class Map extends FragmentActivity implements OnMapReadyCallback, GoogleA
         //mMap.clear();
         //mMap.addMarker(new MarkerOptions().position(new LatLng(current_latitude, current_longitude))
                 //.title("Current location"));
+        System.out.println("Before call to create distance matrix");
+        createDistanceMatrix(mLocationList);
 
         Iterator it = mLocationList.entrySet().iterator();
         while(it.hasNext())
         {
             HashMap.Entry pair = (HashMap.Entry)it.next();
             System.out.println(pair.getKey() + " = " + pair.getValue());
+        }
 
-            LatLng value = mLocationList.get(pair.getKey());
-
-            Object dataTransfer[] = new Object[3];
-
-            String url = getDirectionsUrl();
-            DisplayDirections displayDirections = new DisplayDirections();
-            //GetDirectionsData getDirectionsData = new GetDirectionsData();
-            dataTransfer[0] = mMap;
-            dataTransfer[1] = url;
-            dataTransfer[2] = new LatLng(value.latitude, value.longitude);
-
-            //getDirectionsData.execute(dataTransfer);
-            displayDirections.execute(dataTransfer);
+        //PRINT OUT DISTANCE MATRIX TO SHOW IT WORKS
+        for (int i = 0; i < mLocationList.size(); ++i)
+        {
+            System.out.print("| ");
+            for (int j = 0; j < mLocationList.size(); ++j)
+            {
+                System.out.print(distanceMatrix[i][j] + " ");
+            }
+            System.out.println(" | Location " + i);
         }
     }
+
+    public void createDistanceMatrix(HashMap<CharSequence, LatLng> locationList)
+    {
+        System.out.println("Begin create distance matrix");
+        distanceMatrix = new double[locationList.size()][locationList.size()];
+
+        Iterator it1 = locationList.entrySet().iterator();
+        int it1MatrixSpot = 0;
+
+        while (it1.hasNext())
+        {
+            HashMap.Entry pair1 = (HashMap.Entry)it1.next();
+
+            LatLng value1 = locationList.get(pair1.getKey());
+            start_latitude = value1.latitude;
+            start_longitude = value1.longitude;
+
+            Iterator it2 = locationList.entrySet().iterator();
+
+            int it2MatrixSpot = 0;
+            while (it2.hasNext())
+            {
+                HashMap.Entry pair2 = (HashMap.Entry)it2.next();
+
+                LatLng value2 = locationList.get(pair2.getKey());
+                end_latitude = value2.latitude;
+                end_longitude = value2.longitude;
+
+                Object dataTransfer[] = new Object[3];
+
+                String url = getDirectionsUrl();
+
+                GetDirectionsData getDirectionsData = new GetDirectionsData();
+                dataTransfer[0] = mMap;
+                dataTransfer[1] = url;
+                dataTransfer[2] = new LatLng(end_latitude, end_longitude);
+
+                //This method will use the url to return a jsonfile as a string, which the data parser can then parse to get the appropriate data
+                try {
+                    directionsData = getDirectionsData.execute(dataTransfer).get();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                } catch (ExecutionException e) {
+                    e.printStackTrace();
+                }
+
+                distanceList = null;
+                DataParser parser = new DataParser();
+                distanceList = parser.parseDuration(directionsData);
+
+                //String duration = distanceList.get("duration");
+                String distance = distanceList.get("distance");
+                double distanceValue = Double.parseDouble(distance);
+                distanceMatrix[it1MatrixSpot][it2MatrixSpot] = distanceValue;
+
+                it2MatrixSpot++;
+            }
+
+            it1MatrixSpot++;
+        }
+    }
+
 
     private String getDirectionsUrl()
     {
         StringBuilder googleDirectionsUrl = new StringBuilder("https://maps.googleapis.com/maps/api/directions/json?");
         //EDIT THESE FOR GETTING INFORMATION BETWEEN TWO POINTS
-        googleDirectionsUrl.append("origin="+current_latitude+","+current_longitude);
+        googleDirectionsUrl.append("origin="+start_latitude+","+start_longitude);
         googleDirectionsUrl.append("&destination="+end_latitude+","+end_longitude);
         googleDirectionsUrl.append("&key="+"AIzaSyC02s-qxo9KeghTmfs6ELy-x5oKfrCh8Ss");
 

@@ -22,8 +22,8 @@ public class DataParser {
 
         Log.d("json response", googleDirectionsJson.toString());
         try {
-            duration = googleDirectionsJson.getJSONObject(0).getJSONObject("duration").getString("text");
-            distance = googleDirectionsJson.getJSONObject(0).getJSONObject("distance").getString("text");
+            duration = googleDirectionsJson.getJSONObject(0).getJSONObject("duration").getString("value");
+            distance = googleDirectionsJson.getJSONObject(0).getJSONObject("distance").getString("value");
 
             googleDirectionsMap.put("duration", duration);
             googleDirectionsMap.put("distance", distance);
